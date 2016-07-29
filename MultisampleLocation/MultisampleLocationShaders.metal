@@ -27,7 +27,7 @@ vertex VertexInOut vertexShader(VertexIn vertexIn [[ stage_in ]])
     return outVertex;
 };
 
-fragment uint fragmentShader(VertexInOut inFrag [[ stage_in ]])
+fragment float fragmentShader(VertexInOut inFrag [[ stage_in ]])
 {
     return 1;
 };

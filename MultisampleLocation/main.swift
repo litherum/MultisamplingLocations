@@ -18,20 +18,24 @@ for sampleCount in 0 ..< 100 {
 }
 assert(maximumSampleCount > 1)
 
-let textureDescriptor = MTLTextureDescriptor.texture2DDescriptorWithPixelFormat(.R32Uint, width: 1, height: 1, mipmapped: false)
-//textureDescriptor.textureType = .Type2DMultisample
-//textureDescriptor.sampleCount = maximumSampleCount
-//textureDescriptor.storageMode = .Private
-textureDescriptor.usage = .RenderTarget
-let texture = device.newTextureWithDescriptor(textureDescriptor)
+let multisampleTextureDescriptor = MTLTextureDescriptor.texture2DDescriptorWithPixelFormat(.R32Float, width: 1, height: 1, mipmapped: false)
+multisampleTextureDescriptor.textureType = .Type2DMultisample
+multisampleTextureDescriptor.sampleCount = maximumSampleCount
+multisampleTextureDescriptor.storageMode = .Private
+multisampleTextureDescriptor.usage = .RenderTarget
+let multisampleTexture = device.newTextureWithDescriptor(multisampleTextureDescriptor)
+
+let resolveTextureDescriptor = MTLTextureDescriptor.texture2DDescriptorWithPixelFormat(multisampleTexture.pixelFormat, width: multisampleTexture.width, height: multisampleTexture.height, mipmapped: multisampleTexture.mipmapLevelCount != 1)
+multisampleTextureDescriptor.usage = .RenderTarget
+let resolveTexture = device.newTextureWithDescriptor(resolveTextureDescriptor)
 
 let vertexBufferData : [Float] = [
-    -1, -1,
-    -1, 1,
+    0, 0,
+    0, 1,
     1, 1,
     1, 1,
-    1, -1,
-    -1, -1
+    1, 0,
+    0, 0
 ]
 let vertexBuffer = device.newBufferWithBytes(vertexBufferData, length: vertexBufferData.count * sizeofValue(vertexBufferData[0]), options: .StorageModeManaged)
 
@@ -46,13 +50,13 @@ vertexDescriptor.attributes[0].offset = 0
 vertexDescriptor.attributes[0].bufferIndex = 0
 
 let colorAttachmentDescriptor = MTLRenderPipelineColorAttachmentDescriptor()
-colorAttachmentDescriptor.pixelFormat = texture.pixelFormat
+colorAttachmentDescriptor.pixelFormat = multisampleTexture.pixelFormat
 
 let pipelineDescriptor = MTLRenderPipelineDescriptor()
 pipelineDescriptor.vertexFunction = vertexShader
 pipelineDescriptor.fragmentFunction = fragmentShader
 pipelineDescriptor.vertexDescriptor = vertexDescriptor
-//pipelineDescriptor.sampleCount = maximumSampleCount
+pipelineDescriptor.sampleCount = maximumSampleCount
 pipelineDescriptor.colorAttachments[0] = colorAttachmentDescriptor
 var pipelineState: MTLRenderPipelineState!
 do {
@@ -62,9 +66,10 @@ do {
 }
 
 let renderPassDescriptor = MTLRenderPassDescriptor()
-renderPassDescriptor.colorAttachments[0].texture = texture
+renderPassDescriptor.colorAttachments[0].texture = multisampleTexture
+renderPassDescriptor.colorAttachments[0].resolveTexture = resolveTexture
 renderPassDescriptor.colorAttachments[0].loadAction = .Clear
-renderPassDescriptor.colorAttachments[0].storeAction = .Store
+renderPassDescriptor.colorAttachments[0].storeAction = .MultisampleResolve
 
 let commandQueue = device.newCommandQueue()
 
@@ -76,14 +81,14 @@ renderEncoder.drawPrimitives(.Triangle, vertexStart: 0, vertexCount: 6)
 renderEncoder.endEncoding()
 
 let blitEncoder = commandBuffer.blitCommandEncoder()
-blitEncoder.synchronizeResource(texture)
+blitEncoder.synchronizeResource(resolveTexture)
 blitEncoder.endEncoding()
 
 var complete = false
 let condition = NSCondition()
 commandBuffer.addCompletedHandler { commandBuffer in
-    var data = [UInt32](count: 1, repeatedValue: 0)
-    texture.getBytes(&data, bytesPerRow: sizeof(UInt32), fromRegion: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
+    var data = [Float](count: 1, repeatedValue: 0)
+    resolveTexture.getBytes(&data, bytesPerRow: sizeofValue(data[0]), fromRegion: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
     print("\(data)")
     condition.lock()
     complete = true
