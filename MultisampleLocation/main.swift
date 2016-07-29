@@ -33,11 +33,12 @@ let vertexBufferData : [Float] = [
     0, 0,
     0, 1,
     1, 1,
-    1, 1,
-    1, 0,
-    0, 0
+    1, 0
 ]
-let vertexBuffer = device.newBufferWithBytes(vertexBufferData, length: vertexBufferData.count * sizeofValue(vertexBufferData[0]), options: .StorageModeManaged)
+let vertexBuffer = device.newBufferWithBytes(vertexBufferData, length: vertexBufferData.count * sizeofValue(vertexBufferData[0]), options: MTLResourceOptions())
+
+let indexBufferData : [UInt16] = [ 0, 1, 2, 2, 3, 0 ]
+let indexBuffer = device.newBufferWithBytes(indexBufferData, length: indexBufferData.count * sizeofValue(indexBufferData[0]), options: MTLResourceOptions())
 
 let library = device.newDefaultLibrary()!
 let vertexShader = library.newFunctionWithName("vertexShader")!
@@ -77,12 +78,14 @@ let commandBuffer = commandQueue.commandBuffer()
 let renderEncoder = commandBuffer.renderCommandEncoderWithDescriptor(renderPassDescriptor)
 renderEncoder.setRenderPipelineState(pipelineState)
 renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, atIndex: 0)
-renderEncoder.drawPrimitives(.Triangle, vertexStart: 0, vertexCount: 6)
+renderEncoder.drawIndexedPrimitives(.Triangle, indexCount: indexBufferData.count, indexType: .UInt16, indexBuffer: indexBuffer, indexBufferOffset: 0)
 renderEncoder.endEncoding()
 
-let blitEncoder = commandBuffer.blitCommandEncoder()
-blitEncoder.synchronizeResource(resolveTexture)
-blitEncoder.endEncoding()
+if resolveTexture.storageMode == .Managed {
+    let blitEncoder = commandBuffer.blitCommandEncoder()
+    blitEncoder.synchronizeResource(resolveTexture)
+    blitEncoder.endEncoding()
+}
 
 var complete = false
 let condition = NSCondition()
