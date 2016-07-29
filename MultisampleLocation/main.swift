@@ -17,6 +17,7 @@ for sampleCount in 0 ..< 100 {
     }
 }
 assert(maximumSampleCount > 1)
+assert(maximumSampleCount <= 32)
 
 let multisampleTextureDescriptor = MTLTextureDescriptor.texture2DDescriptorWithPixelFormat(.R32Float, width: 1, height: 1, mipmapped: false)
 multisampleTextureDescriptor.textureType = .Type2DMultisample
@@ -73,8 +74,12 @@ let condition = NSCondition()
 
 var iterationX = 0
 var iterationY = 0
-let stepsX = 10
-let stepsY = 10
+let stepsX = 100
+let stepsY = 100
+
+var redMask = UInt32(0)
+var greenMask = UInt32(0)
+var blueMask = UInt32(0)
 
 func draw() {
     var vertexBufferData : [Float] = [
@@ -105,7 +110,18 @@ func draw() {
     commandBuffer.addCompletedHandler { commandBuffer in
         var data = [Float](count: 1, repeatedValue: 0)
         resolveTexture.getBytes(&data, bytesPerRow: sizeofValue(data[0]), fromRegion: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
-        print("(\(iterationX), \(iterationY)): \(data[0])")
+        if data[0] != 0 {
+            let coordinateX = (Float(iterationX) + Float(0.5)) / Float(stepsX)
+            //let coordinateY = (Float(iterationY) + Float(0.5)) / Float(stepsY)
+            let mask = UInt32(data[0] * Float(maximumSampleCount))
+            if coordinateX < Float(1) / Float(3) {
+                redMask = redMask | mask
+            } else if coordinateX < Float(2) / Float(3) {
+                greenMask = greenMask | mask
+            } else {
+                blueMask = blueMask | mask
+            }
+        }
         iterationX = iterationX + 1
         if iterationX == stepsX {
             iterationX = 0
@@ -131,3 +147,7 @@ while !complete {
     condition.wait()
 }
 condition.unlock()
+
+print("Red Mask: \(redMask)")
+print("Green Mask: \(greenMask)")
+print("Blue Mask: \(blueMask)")

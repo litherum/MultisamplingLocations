@@ -27,8 +27,8 @@ vertex VertexInOut vertexShader(VertexIn vertexIn [[ stage_in ]])
     return outVertex;
 };
 
-fragment float fragmentShader(VertexInOut inFrag [[ stage_in ]])
+fragment float fragmentShader(VertexInOut inFrag [[ stage_in ]], uint samp [[ sample_mask ]])
 {
-    return 1;
+    return samp;
 };
 
