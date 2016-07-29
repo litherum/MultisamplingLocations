@@ -29,13 +29,7 @@ let resolveTextureDescriptor = MTLTextureDescriptor.texture2DDescriptorWithPixel
 multisampleTextureDescriptor.usage = .RenderTarget
 let resolveTexture = device.newTextureWithDescriptor(resolveTextureDescriptor)
 
-let vertexBufferData : [Float] = [
-    0, 0,
-    0, 1,
-    1, 1,
-    1, 0
-]
-let vertexBuffer = device.newBufferWithBytes(vertexBufferData, length: vertexBufferData.count * sizeofValue(vertexBufferData[0]), options: MTLResourceOptions())
+let vertexBuffer = device.newBufferWithLength(sizeof(Float) * 2 * 4, options: MTLResourceOptions())
 
 let indexBufferData : [UInt16] = [ 0, 1, 2, 2, 3, 0 ]
 let indexBuffer = device.newBufferWithBytes(indexBufferData, length: indexBufferData.count * sizeofValue(indexBufferData[0]), options: MTLResourceOptions())
@@ -74,32 +68,63 @@ renderPassDescriptor.colorAttachments[0].storeAction = .MultisampleResolve
 
 let commandQueue = device.newCommandQueue()
 
-let commandBuffer = commandQueue.commandBuffer()
-let renderEncoder = commandBuffer.renderCommandEncoderWithDescriptor(renderPassDescriptor)
-renderEncoder.setRenderPipelineState(pipelineState)
-renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, atIndex: 0)
-renderEncoder.drawIndexedPrimitives(.Triangle, indexCount: indexBufferData.count, indexType: .UInt16, indexBuffer: indexBuffer, indexBufferOffset: 0)
-renderEncoder.endEncoding()
-
-if resolveTexture.storageMode == .Managed {
-    let blitEncoder = commandBuffer.blitCommandEncoder()
-    blitEncoder.synchronizeResource(resolveTexture)
-    blitEncoder.endEncoding()
-}
-
 var complete = false
 let condition = NSCondition()
-commandBuffer.addCompletedHandler { commandBuffer in
-    var data = [Float](count: 1, repeatedValue: 0)
-    resolveTexture.getBytes(&data, bytesPerRow: sizeofValue(data[0]), fromRegion: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
-    print("\(data)")
-    condition.lock()
-    complete = true
-    condition.signal()
-    condition.unlock()
+
+var iterationX = 0
+var iterationY = 0
+let stepsX = 10
+let stepsY = 10
+
+func draw() {
+    var vertexBufferData : [Float] = [
+        2 * Float(iterationX) / Float(stepsX) - 1, 2 * Float(iterationY) / Float(stepsY) - 1,
+        2 * Float(iterationX) / Float(stepsX) - 1, 2 * Float(iterationY + 1) / Float(stepsY) - 1,
+        2 * Float(iterationX + 1) / Float(stepsX) - 1, 2 * Float(iterationY + 1) / Float(stepsY) - 1,
+        2 * Float(iterationX + 1) / Float(stepsX) - 1, 2 * Float(iterationY) / Float(stepsY) - 1
+    ]
+    let vertexBufferContents = UnsafeMutablePointer<Float>(vertexBuffer.contents())
+    vertexBufferContents.assignFrom(&vertexBufferData, count: vertexBufferData.count)
+    if vertexBuffer.storageMode == .Managed {
+        vertexBuffer.didModifyRange(NSMakeRange(0, vertexBuffer.length))
+    }
+
+    let commandBuffer = commandQueue.commandBuffer()
+    let renderEncoder = commandBuffer.renderCommandEncoderWithDescriptor(renderPassDescriptor)
+    renderEncoder.setRenderPipelineState(pipelineState)
+    renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, atIndex: 0)
+    renderEncoder.drawIndexedPrimitives(.Triangle, indexCount: indexBufferData.count, indexType: .UInt16, indexBuffer: indexBuffer, indexBufferOffset: 0)
+    renderEncoder.endEncoding()
+
+    if resolveTexture.storageMode == .Managed {
+        let blitEncoder = commandBuffer.blitCommandEncoder()
+        blitEncoder.synchronizeResource(resolveTexture)
+        blitEncoder.endEncoding()
+    }
+
+    commandBuffer.addCompletedHandler { commandBuffer in
+        var data = [Float](count: 1, repeatedValue: 0)
+        resolveTexture.getBytes(&data, bytesPerRow: sizeofValue(data[0]), fromRegion: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
+        print("(\(iterationX), \(iterationY)): \(data[0])")
+        iterationX = iterationX + 1
+        if iterationX == stepsX {
+            iterationX = 0
+            iterationY = iterationY + 1
+        }
+        if iterationY == stepsY {
+            condition.lock()
+            complete = true
+            condition.signal()
+            condition.unlock()
+        } else {
+            draw()
+        }
+    }
+
+    commandBuffer.commit()
 }
 
-commandBuffer.commit()
+draw()
 
 condition.lock()
 while !complete {
